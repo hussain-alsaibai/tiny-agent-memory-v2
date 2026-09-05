@@ -1,0 +1,12 @@
+__pycache__/
+*.py[cod]
+.venv/
+.eggs/
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+dist/
+build/
+.agent-memory.db
+memory-export.json
