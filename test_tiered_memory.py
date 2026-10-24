@@ -139,3 +139,45 @@ class TestTieredMemory:
         assert exp["agent_id"] == "test"
         assert "exported_at" in exp
         assert "snapshot" in exp
+
+
+class TestLocking:
+    """Regression tests for the stats() self-deadlock.
+
+    EpisodicMemory.stats() used to acquire self._lock and then call
+    self.count(), which acquired the same non-reentrant threading.Lock again.
+    Every stats() call hung the calling thread forever -- no error, no
+    timeout, no traceback. The symptom was a pytest run that printed all
+    its dots and then never exited.
+    """
+
+    def test_episodic_stats_does_not_deadlock(self):
+        from concurrent.futures import ThreadPoolExecutor
+
+        m = TieredMemory(agent_id="test", db_path=":memory:")
+        m.remember("Something happened")
+        # If stats() deadlocked this would hang forever instead of failing.
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            future = pool.submit(m.episodic.stats)
+            stats = future.result(timeout=10)
+        assert stats["episode_count"] == 1
+
+    def test_tiered_stats_completes_with_timeout(self):
+        from concurrent.futures import ThreadPoolExecutor
+
+        m = TieredMemory(agent_id="test", db_path=":memory:")
+        m.remember("An episode")
+        m.store("A fact")
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            future = pool.submit(m.stats)
+            stats = future.result(timeout=10)
+        assert stats["agent_id"] == "test"
+        assert stats["episodic"]["episode_count"] == 1
+
+    def test_episodic_lock_is_reentrant(self):
+        m = TieredMemory(agent_id="test", db_path=":memory:")
+        lock = m.episodic._lock
+        # An RLock can be acquired twice from the same thread.
+        with lock:
+            with lock:
+                pass

@@ -25,7 +25,7 @@ import math
 from typing import Any, Optional
 from dataclasses import dataclass, field, asdict
 from collections import OrderedDict
-from threading import Lock
+from threading import Lock, RLock
 
 try:
     import snapdb
@@ -231,7 +231,7 @@ class EpisodicMemory:
         self.compress_after = compress_after
         self._db = None
         self._db_path = db_path
-        self._lock = Lock()
+        self._lock = RLock()
         self._episode_count = 0
         self._use_snapdb = _HAS_SNAPDB
 
@@ -338,15 +338,22 @@ class EpisodicMemory:
                     self._episodes = keep
 
     def stats(self) -> dict:
+        # Build the payload under the lock, but never call another public
+        # method that re-acquires it. count() takes self._lock, so calling
+        # self.count() from inside this `with` block self-deadlocked on a
+        # non-reentrant Lock: stats() hung the calling thread forever with
+        # no error, no timeout and no traceback.
         with self._lock:
-            return {
-                "episode_count": self.count(),
-                "max_episodes": self.max_episodes,
-                "compressed_count": sum(
-                    1 for e in (self._episodes if not self._use_snapdb else [])
-                    if e.metadata.get("compressed")
-                ),
-            }
+            episode_count = self._db.len() if self._use_snapdb else len(self._episodes)
+            compressed_count = sum(
+                1 for e in (self._episodes if not self._use_snapdb else [])
+                if e.metadata.get("compressed")
+            )
+        return {
+            "episode_count": episode_count,
+            "max_episodes": self.max_episodes,
+            "compressed_count": compressed_count,
+        }
 
 
 # ─────────────────────────────────────────────────────────────
