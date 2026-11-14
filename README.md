@@ -5,7 +5,8 @@
 > Zero dependencies. MIT. ~550 lines.
 
 ```bash
-pip install tiny-agent-memory
+# From GitHub (recommended -- not yet on PyPI)
+pip install git+https://github.com/hussain-alsaibai/tiny-agent-memory-v2.git
 # or just copy tiny_agent_memory/tiered_memory.py
 ```
 
