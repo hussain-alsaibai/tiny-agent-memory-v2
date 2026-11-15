@@ -41,17 +41,48 @@ def test_pyproject_declares_the_v2_package_name():
     )
 
 
+GIT_URL = "^git\\+https://github\\.com/(?:[^/]+)/([^/@\\s\"']+?)(?:\\.git)?$"
+
+# Two install forms are correct here:
+#   pip install tiny-agent-memory-v2                       (once published)
+#   pip install git+https://github.com/<owner>/<repo>.git   (today)
+# Anything else -- a bare name that belongs to another project, or a git URL
+# pointing at a different repository -- is a bug.
+INSTALL_RE = re.compile(
+    r'^\s*pip install (?:\\\n\s*)*(?:"([^"]+)"|\'([^\']+)\'|(\S+))',
+    re.MULTILINE,
+)
+
+
+def _installed_targets(text):
+    for m in INSTALL_RE.finditer(text):
+        target = next(g for g in m.groups() if g is not None)
+        # strip PEP 508 extras / direct-URL parts down to the thing being installed
+        if target.startswith("git+") or " @ " in target:
+            yield ("git", target)
+        else:
+            yield ("name", target.split("==")[0].split("[")[0].strip())
+
+
 def test_readme_installs_the_v2_package_name():
-    """Every `pip install` in the README must name this package."""
+    """Every `pip install` in the README names this package, by name or URL."""
     text = _read("README.md")
-    installs = re.findall(r"pip install ([A-Za-z0-9._\-]+)", text)
-    assert installs, "no pip install line found in README.md"
-    for name in installs:
-        assert name == PACKAGE_NAME, (
-            "README says `pip install %s` but this package is %s. "
-            "The other project owns %s."
-            % (name, PACKAGE_NAME, OTHER_PROJECT)
-        )
+    targets = list(_installed_targets(text))
+    assert targets, "no pip install line found in README.md"
+    for kind, target in targets:
+        if kind == "name":
+            assert target == PACKAGE_NAME, (
+                "README says `pip install %s` but this package is %s. "
+                "The other project owns %s."
+                % (target, PACKAGE_NAME, OTHER_PROJECT)
+            )
+        else:
+            url = target.split(" @ ")[-1]
+            m = re.match(GIT_URL, url)
+            assert m and m.group(1) == PACKAGE_NAME, (
+                "README installs from %r, which is not this repository (%s)"
+                % (url, PACKAGE_NAME)
+            )
 
 
 def test_readme_title_matches_the_package_name():
